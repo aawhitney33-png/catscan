@@ -6,8 +6,7 @@
     <title>Little Shelter CatSCAN</title>
     <link rel="icon" type="image/png" href="https://res.cloudinary.com/wtj0oyon/image/upload/v1784401450/lsscanicon_avbopo.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50">
             <!-- LOGIN SCREEN -->
@@ -319,20 +318,10 @@
     </div>
 
     <script>
-        // Firebase Configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyAusJ5msQq0-OPo-uD_UgEnxkys0ARMxus",
-            authDomain: "lshelter.firebaseapp.com",
-            projectId: "lshelter",
-            storageBucket: "lshelter.firebasestorage.app",
-            messagingSenderId: "352477199078",
-            appId: "1:352477199078:web:c9c75d9f7d366bf03a9927"
-        };
-
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
-        const catsRef = database.ref('cats');
+        // Supabase Configuration
+        const SUPABASE_URL = 'https://vmvcqdudjeaqmwculrca.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_ztIWO04pvJ9VujA3rwSZ3w_YTPtMDPL';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // App State
         let cats = [];
@@ -354,28 +343,51 @@
         }  // Change this to your own PIN
 
         // Load cats from storage
-        function loadCats() {
-            // Listen for real-time updates from Firebase
-            catsRef.on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    cats = Object.values(data);
-                    console.log('Loaded ' + cats.length + ' cats from Firebase');
+        async function loadCats() {
+            try {
+                const { data, error } = await supabase
+                    .from('cats')
+                    .select('*');
+                
+                if (error) {
+                    console.error('Error loading cats:', error);
+                    // Fallback to localStorage if Supabase fails
+                    const saved = localStorage.getItem('catsData');
+                    if (saved) cats = JSON.parse(saved);
+                } else if (data && data.length > 0) {
+                    cats = data || [];
+                    console.log('Loaded ' + cats.length + ' cats from Supabase');
                 } else {
-                    cats = [];
+                    // First load - try to migrate from localStorage to Supabase
+                    const saved = localStorage.getItem('catsData');
+                    if (saved) {
+                        cats = JSON.parse(saved);
+                        console.log('Migrating ' + cats.length + ' cats to Supabase...');
+                        await saveCats();
+                    }
                 }
-                updateCatList();
-                document.getElementById('catCount').textContent = cats.length;
-            });
+            } catch (e) {
+                console.error('Error:', e);
+            }
+            updateCatList();
+            document.getElementById('catCount').textContent = cats.length;
         }
 
-        // Save to Firebase
-        function saveCats() {
-            const catsObj = {};
-            cats.forEach(cat => {
-                catsObj[cat.id] = cat;
-            });
-            catsRef.set(catsObj);
+        // Save to Supabase
+        async function saveCats() {
+            try {
+                // Delete all existing and re-insert (simpler for now)
+                await supabase.from('cats').delete().neq('id', 0);
+                
+                // Insert all cats
+                const { error } = await supabase
+                    .from('cats')
+                    .insert(cats);
+                
+                if (error) console.error('Error saving:', error);
+            } catch (e) {
+                console.error('Error:', e);
+            }
         }
 
         // Show tab
@@ -1084,7 +1096,6 @@
 
         // Start
         // loadCats() is called after staff password verification
-        // (see checkStaffPassword function)
         updateTabButtons('lookup');
         document.getElementById('searchChip').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') searchCat();
